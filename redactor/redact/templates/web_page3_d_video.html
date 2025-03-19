@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download Redacted Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #A1E3F9;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 400px;
+        }
+        h2 {
+            color: #333;
+        }
+        p {
+            color: #555;
+        }
+        button {
+            background: #3674B5;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #255684;
+        }
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+        }
+        #countdown {
+            font-size: 18px;
+            font-weight: bold;
+            color: #d9534f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Download Your Redacted Data</h2>
+        <p>Your file will be downloaded in <span id="countdown">5</span> seconds...</p>
+        <div id="output"></div>
+        <button id="downloadBtn" disabled>Download File</button>
+    </div>
+
+    <script>
+        let countdown = 5;
+        const countdownElement = document.getElementById("countdown");
+        const downloadBtn = document.getElementById("downloadBtn");
+
+        // Store the file URL dynamically from Django session
+        const fileUrl = "{{ file_url|escapejs }}";  // Passed from Django context
+        console.log(fileUrl)
+
+        function startDownload() {
+            fetch("{% url 'download_video' %}")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("File not found or deleted.");
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const fileName = fileUrl;
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = fileName;  
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                // Enable manual download option
+                downloadBtn.disabled = false;
+                downloadBtn.onclick = function() {
+                    window.location.href = url;
+                };
+            })
+            .catch(error => {
+                document.getElementById("output").innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                downloadBtn.disabled = false;
+            });
+        }
+
+        function updateCountdown() {
+            countdownElement.textContent = countdown;
+            if (countdown === 0) {
+                startDownload();
+                downloadBtn.disabled = false;
+            } else {
+                countdown--;
+                setTimeout(updateCountdown, 1000);
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            setTimeout(updateCountdown, 1000);
+        });
+    </script>
+</body>
+</html>

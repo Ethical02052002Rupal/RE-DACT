@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Redaction Toolkit</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #A1E3F9;
+            margin: 0;
+            overflow: hidden;
+        }
+        .container {
+            background: #FEF9E1;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            display: flex;
+            gap: 5px;
+            width: 90vw;
+            height: 90vh;
+            max-width: 1400px;
+            max-height: 800px;
+            box-sizing: border-box;
+        }
+        .image-container {
+            flex: 1;
+            border: 3px solid black;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        .image-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: auto;
+            border: 2px solid black;
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+        .redaction-container {
+            flex: 1;
+            border: 2px solid black;
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .redacted-terms {
+            border: 2px solid black;
+            padding: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            max-height: 100px;
+            overflow-y: auto;
+            width: 90%;
+        }
+        /* NLP + Faces side-by-side container */
+        .nlp-faces-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            width: 100%;
+        }
+        .nlp-container {
+            flex: 1;
+            max-width: 75%;
+            text-align: center;
+        }
+        .faces-container {
+            flex: 1;
+            max-width: 25%;
+            text-align: center;
+        }
+        .detected-faces {
+            border: 2px solid black;
+            justify-content: center;
+            align-items: center;
+            padding: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            overflow-y: auto;
+            max-height: 150px;
+        }
+        .term-box {
+            border: 2px solid black;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            background: #ffcccc;
+            cursor: pointer;
+        }
+        .new-term-box {
+            background: #99ff99 !important;
+        }
+        .term-box span {
+            margin-left: 5px;
+            color: red;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .redact-btn, .download-btn {
+            background: #3674B5;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            text-align: center;
+            margin: 5px;
+        }
+        .redact-btn:hover, .download-btn:hover {
+            background: #255684;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="image-container">
+            <p>Image Preview</p>
+            <div class="image-wrapper">
+                <img id="imageViewer" src="{{ image_url }}" alt="Uploaded Image">
+            </div>
+        </div>
+        <div class="redaction-container">
+            <p>OCR Detected Words</p>
+            <div class="redacted-terms" id="ocrWordsContainer">
+                {% for term in ocr_detected_words %}
+                    <div class="term-box" onclick="moveToNlpContainer(this, '{{ term }}')">{{ term }}</div>
+                {% endfor %}
+            </div>
+
+            <div class="nlp-faces-container">
+                <div class="nlp-container">
+                    <p>NLP Detected Words</p>
+                    <div class="redacted-terms" id="nlpWordsContainer">
+                        {% for term in nlp_detected_words %}
+                            <div class="term-box">
+                                {{ term }} <span onclick="removeWord(this, '{{ term }}')">❌</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="faces-container">
+                    <p>Detected Faces</p>
+                    <div class="detected-faces" id="detectedFacesContainer">
+                        <img src="{{ face }}" alt="Face" width="70" height="100">
+                    </div>
+                </div>
+            </div>
+
+            <button class="redact-btn" onclick="redactImage()">Redact</button>
+            <form action="{% url 'download_i' %}" method="post">
+                {% csrf_token %}
+                <button class="download-btn" type="submit">Download</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let selectedWords = [];
+
+        async function moveToNlpContainer(element, word) {
+            if (!selectedWords.includes(word)) {
+                selectedWords.push(word);
+                addWordToNlpContainer(word);
+                await updateNlpWords(word, "add");
+            }
+        }
+
+        function addWordToNlpContainer(word) {
+            let nlpContainer = document.getElementById("nlpWordsContainer");
+
+            let termBox = document.createElement("div");
+            termBox.classList.add("term-box", "new-term-box");
+            termBox.innerHTML = `${word} <span onclick="removeWord(this, '${word}')">❌</span>`;
+
+            nlpContainer.appendChild(termBox);
+        }
+
+        async function removeWord(element, word) {
+            selectedWords = selectedWords.filter(w => w !== word);
+            element.parentElement.remove();
+            await updateNlpWords(word, "remove");
+        }
+
+        async function updateNlpWords(word, action) {
+            try {
+                let response = await fetch('/update_nlp_words/', {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": getCsrfToken(),
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ word, action })
+                });
+
+                let data = await response.json();
+                if (data.status !== "success") {
+                    console.error("Failed to update backend:", data.message);
+                }
+            } catch (error) {
+                console.error("Error updating NLP words:", error);
+            }
+        }
+
+        async function redactImage() {
+            let response = await fetch('/redact_image/', {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCsrfToken(),
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ words: selectedWords })
+            });
+
+            let data = await response.json();
+            if (data.image_url) {
+                document.getElementById("imageViewer").src = data.image_url;
+            }
+        }
+
+        function getCsrfToken() {
+            return document.querySelector("[name=csrfmiddlewaretoken]").value;
+        }
+    </script>
+</body>
+</html>

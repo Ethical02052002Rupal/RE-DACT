@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Redaction Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #A1E3F9;
+        }
+        .container {
+            display: flex;
+            background: #FEF9E1;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            height: 80%;
+            max-width: 1200px;
+        }
+        .video-section, .redaction-section {
+            padding: 20px;
+            border: 2px solid #255684;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .video-section {
+            flex: 2;
+            background: #3674B5;
+        }
+        .redaction-section {
+            flex: 1;
+            background: white;
+            margin-left: 20px;
+            text-align: center;
+        }
+        button {
+            background: #3674B5;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #255684;
+        }
+        #videoOutput {
+            width: 100%;
+            height: auto;
+        }
+        #redacted-container {
+            width: 100%;
+            min-height: 150px;
+            border: 2px dashed #255684;
+            background: #f0f0f0;
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+        }
+        .face-thumbnail {
+            width: 60px;
+            height: 60px;
+            margin: 5px;
+            border: 2px solid #255684;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .face-thumbnail.selected {
+            border: 3px solid red;
+        }
+        #redactedVideo {
+            width: 100%;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-section">
+            <video id="videoOutput" controls>
+                <source src="{{ file_url }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <button onclick="detectFaces()">Detect Faces</button>
+        </div>
+        <div class="redaction-section">
+            <h3>Select Faces to Redact</h3>
+            <div id="redacted-container">
+                <div id="faces-list" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+            </div>            
+            <button onclick="redactVideo()">Redact</button>
+            <form action="{% url 'download_v' %}" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="file_url" id="fileUrlInput">
+                <button class="download-btn" type="submit">Download</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let selectedFaces = [];
+        let videoUrl = "{{ file_url }}";
+
+        function detectFaces() {
+            let videoElement = document.getElementById("videoOutput");
+            let videoUrl = videoElement.querySelector("source").getAttribute("src");
+            
+            fetch(`/detect_faces/?video_url=${videoUrl}`)
+                .then(response => response.json())
+                .then(data => {
+                    let facesList = document.getElementById("faces-list");
+                    facesList.innerHTML = ""; // Clear previous faces
+
+                    data.face_images.forEach((imgUrl, index) => {
+                        const img = document.createElement("img");
+                        img.src = imgUrl;
+                        img.classList.add("face-thumbnail");
+                        img.id = `face_${index}`;
+                        img.onclick = function() { toggleSelection(index); };
+
+                        facesList.appendChild(img);
+                    });
+                })
+                .catch(error => console.error("Error detecting faces:", error));
+        }  
+
+        function toggleSelection(faceId) {
+            let faceImg = document.getElementById(`face_${faceId}`);
+            
+            if (selectedFaces.includes(faceId)) {
+                selectedFaces = selectedFaces.filter(id => id !== faceId);
+                faceImg.classList.remove("selected");
+            } else {
+                selectedFaces.push(faceId);
+                faceImg.classList.add("selected");
+            }
+        }
+
+
+        function redactVideo() {
+            if (selectedFaces.length === 0) { // Fix: Use length instead of size
+                alert("Please select at least one face to redact.");
+                return;
+            }
+
+            let formData = new FormData();
+            let videoElement = document.getElementById("videoOutput");
+            let videoUrl = videoElement.querySelector("source").getAttribute("src");
+
+            formData.append("video_url", videoUrl);
+            selectedFaces.forEach(faceId => formData.append("selected_faces[]", faceId));
+
+            fetch("/redact_video/", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById("fileUrlInput").value = data.redacted_video_url;
+                    document.getElementById("downloadButton").style.display = "block";
+                } else {
+                    alert("Error: " + data.error);
+                }
+            })
+            .catch(error => console.error("Error redacting video:", error));
+        }
+    </script>
+</body>
+</html>

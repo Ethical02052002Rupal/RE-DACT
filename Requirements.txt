@@ -1,0 +1,7 @@
+pymupdf
+spacy
+usaddress
+opencv-python
+numpy
+ultralytics
+pytesseract
